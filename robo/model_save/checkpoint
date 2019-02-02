@@ -1,2 +1,2 @@
-model_checkpoint_path: "model16"
-all_model_checkpoint_paths: "model16"
+model_checkpoint_path: "model_small0"
+all_model_checkpoint_paths: "model_small0"

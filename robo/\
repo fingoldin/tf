@@ -6,8 +6,8 @@ import tkinter
 import sys
 
 epochs = 5000000
-axle_size = 0.585
-batch_size = 400
+axle_size = 1.0
+batch_size = 200
 sim_steps = 1000
 plot_n = 20
 v_scale = 4.0
@@ -18,10 +18,10 @@ initial_trans_box = [[ -6.0, 6.0 ], [ -12.0, 0.0 ], [ -1.6, 1.6 ]]
 target_vel_box = [ 0.1, 0.5 ]
 target = [ 0.0, 0.0, 0.0 ]
 loss_weights = [ 1.0, 1.0, 3.0 ]
-learning_rate = 0.1
+learning_rate = 0.005
 lamb = 100.0
-lamb_smooth = 100.0
-lamb_vel = 5.0
+lamb_smooth = 10.0
+lamb_vel = 50.0
 lamb_len = 0.0#2.0
 lamb_fast = 0.0
 load_path = "model_save/model_small0"
@@ -177,9 +177,9 @@ with tf.Session() as sess:
     
     #print(sess.run(initial_trans))
     #print(sess.run(target_vels))
-    #print(sess.run(model([[0.0, -2.0, 0.0, 0.0]])))
+    print(sess.run(model([[0.0, -2.0, 0.0, 0.0]])))
     #print(sess.run(layer2(layer1([[0.0, 0.0, 0.0, 0.0]]))))
-    print(sess.run(layer3(layer2(layer1([[0.0, -2.0, 0.0, 0.0]])))))
+    #print(sess.run(layer1([[1.0, 1.0, 1.0, 1.0]])))
     #print(sess.run(layer1.weights))
     #print(sess.run(layer2.weights))
 
@@ -257,5 +257,5 @@ with tf.Session() as sess:
             plt.ylim(-13.0, 3.0)
             plt.gca().set_aspect("equal", adjustable="box")
             plt.show(block = False)
-            plt.pause(2)
+            plt.pause(4)
             plt.close()
