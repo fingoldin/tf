@@ -11,21 +11,24 @@ batch_size = 400
 sim_steps = 1000
 plot_n = 20
 v_scale = 4.0
-hidden_size = 16
+hidden_size = 20
 dt_hidden_size = 16
 max_dt = 0.02
-initial_trans_box = [[ -6.0, 6.0 ], [ -12.0, 0.0 ], [ -1.6, 1.6 ]]
-target_vel_box = [ 0.1, 0.5 ]
+initial_trans_box = [[ -6.0, 6.0 ], [ -12.0, -4.0 ], [ -1.6, 1.6 ]]
+#target_vel_box = [ 0.1, 0.5 ]
+target_vel = 0.5
+min_vel = 0.25
+max_vel = 0.55
 target = [ 0.0, 0.0, 0.0 ]
 loss_weights = [ 1.0, 1.0, 3.0 ]
 learning_rate = 0.1
 lamb = 100.0
-lamb_smooth = 100.0
-lamb_vel = 5.0
+lamb_smooth = 10.0
+lamb_vel = 0.0# 100.0
 lamb_len = 0.0#2.0
 lamb_fast = 0.0
-load_path = "model_save/model_small0"
-save_path = "model_save/model_small0"
+load_path = "model_save/model_novel4"
+save_path = "model_save/model_novel4"
 log_path = "model_log/"
 
 class Dense:
@@ -44,11 +47,12 @@ class Dense:
     def __call__(self, batch):
         return self.activation(tf.matmul(batch, self.weights) + self.biases)
 
-layer1 = Dense("layer1", [ 4, hidden_size ])
+layer1 = Dense("layer1", [ 3, hidden_size ])
 layer2 = Dense("layer2", [ hidden_size, hidden_size ])
 layer3 = Dense("layer3", [ hidden_size, 2 ])
+#layer4 = Dense("layer4", [ hidden_size, 2 ])
 
-dt_layer1 = Dense("dt_layer1", [ 4, dt_hidden_size ])
+dt_layer1 = Dense("dt_layer1", [ 3, dt_hidden_size ])
 dt_layer2 = Dense("dt_layer2", [ dt_hidden_size, dt_hidden_size ])
 dt_layer3 = Dense("dt_layer3", [ dt_hidden_size, 1 ], tf.nn.relu)
 
@@ -56,6 +60,7 @@ def model(X):
     out = layer1(X)
     out = layer2(out)
     out = layer3(out)
+#    out = layer4(out)
 
     return 0.5 * (out + 1.0)
 
@@ -68,8 +73,8 @@ def dt_model(X):
 
 def update(trans, vel, dt, d):
     vel_t = tf.transpose(vel)
-    lv = vel_t[0]
-    rv = vel_t[1]
+    lv = vel_t[0] * (max_vel - min_vel) + min_vel
+    rv = vel_t[1] * (max_vel - min_vel) + min_vel
     dtheta = -dt * (rv - lv) / d
     theta = tf.transpose(trans)[2] + dtheta
     dx = 0.5 * (rv + lv) * tf.sin(theta) * dt
@@ -95,16 +100,16 @@ initial_trans = tf.add(initial_trans, initial_trans_box_t[0])
 targets = tf.tile(tf.expand_dims(target, 0), [ batch_size, 1 ])
 l_weights = tf.expand_dims(tf.nn.softmax(loss_weights), 0)
 
-target_vels = tf.random_uniform([ batch_size, 1 ])
-target_vels = tf.multiply(target_vels, target_vel_box[1] - target_vel_box[0])
-target_vels = tf.add(target_vels, target_vel_box[0])
+#target_vels = tf.random_uniform([ batch_size, 1 ])
+#target_vels = tf.multiply(target_vels, target_vel_box[1] - target_vel_box[0])
+#target_vels = tf.add(target_vels, target_vel_box[0])
 
 #def norm_trans(trans):
 #    return (2.0 * (trans - initial_trans_box_t[0]) / (initial_trans_box_t[1] - initial_trans_box_t[0]) - 1.0)
 
 #norm_target_vels = 2.0 * (target_vels - target_vel_box[0]) / (target_vel_box[1] - target_vel_box[0]) - 1.0
 
-dt = tf.reshape(dt_model(tf.concat([ initial_trans, target_vels ], axis = -1)), [batch_size])
+dt = tf.reshape(dt_model(initial_trans), [batch_size])
 
 def step(t, vel, last_vel, velocities, trans, transforms):
     #p_diff = targets - trans
@@ -114,7 +119,7 @@ def step(t, vel, last_vel, velocities, trans, transforms):
     #mask = tf.cast(tf.logical_not(tf.logical_and(p_metric, v_metric)), tf.float32)
     #mask = tf.tile(tf.expand_dims(mask, -1), [ 1, 2 ])
 
-    vel = model(tf.concat([ trans, target_vels ], axis = -1))# * mask
+    vel = model(trans)# * mask
     last_vel = vel#tf.where(vel == 0.0, last_vel, vel)
     dtrans = update(trans, vel, dt, axle_size)
     trans = trans + dtrans
@@ -146,7 +151,7 @@ loss_smooth = lamb_smooth * tf.reduce_mean(tf.reduce_max(tf.pow(smooth_error, 4.
 log_velocities = tf.where(velocities > 0.0, tf.log(velocities), tf.constant(-10.0, shape = [ sim_steps, batch_size, 2 ]))
 loss_fast = lamb_fast * tf.reduce_mean(tf.reduce_sum(tf.reduce_sum(log_velocities * log_velocities, axis = -1), axis = 0))
 
-vel_error = last_vel - tf.tile(target_vels, [ 1, 2 ])
+vel_error = tf.reduce_mean(velocities, axis = 0) - np.array([[target_vel, target_vel]])
 loss_vel = lamb_vel * tf.reduce_mean(tf.reduce_sum(vel_error * vel_error, axis = -1))
 
 dtransforms = transforms[1:,:,:] - transforms[0:-1,:,:]
@@ -179,13 +184,13 @@ with tf.Session() as sess:
     #print(sess.run(target_vels))
     #print(sess.run(model([[0.0, -2.0, 0.0, 0.0]])))
     #print(sess.run(layer2(layer1([[0.0, 0.0, 0.0, 0.0]]))))
-    print(sess.run(layer3(layer2(layer1([[0.0, -2.0, 0.0, 0.0]])))))
+    #print(sess.run(layer3(layer2(layer1([[0.0, -2.0, 0.0, 0.0]])))))
     #print(sess.run(layer1.weights))
     #print(sess.run(layer2.weights))
 
     with open("data.text", "w") as fd:
-        layers = [ sess.run(layer1.weights), sess.run(layer2.weights), sess.run(layer3.weights) ]
-        biases = [ sess.run(layer1.biases), sess.run(layer2.biases), sess.run(layer3.biases) ]
+        layers = [ sess.run(layer1.weights), sess.run(layer2.weights), sess.run(layer3.weights)] #, sess.run(layer4.weights) ]
+        biases = [ sess.run(layer1.biases), sess.run(layer2.biases), sess.run(layer3.biases)] #, sess.run(layer4.biases) ]
        
         fd.write(str(len(layers) + 1) + "\n")
         fd.write(str(len(layers[0])) + " ")
@@ -209,13 +214,13 @@ with tf.Session() as sess:
         fd.write("\n")
 
     for i in range(epochs):
-        _,tvs,tstep,lv,l1,l2,l3,l4,l5,vels,ts,summary = sess.run((train, target_vels, dt, last_vel, loss_p, loss_smooth, loss_vel, loss_len, loss_fast, velocities, transforms, all_losses_summary))
+        _,tstep,lv,l1,l2,l3,l4,l5,vels,ts,summary = sess.run((train, dt, last_vel, loss_p, loss_smooth, loss_vel, loss_len, loss_fast, velocities, transforms, all_losses_summary))
 
         #print(str(vels[0][0]) + " with " + str(ts[0][0]))
         #print(str(vels[1][0]) + " with " + str(ts[1][0]))
         #print(lv[0:4])
         print("loss_p: " + str(l1) + "  loss_smooth: " + str(l2) + "  loss_vel: " + str(l3) + "  loss_len: " + str(l4) + "  loss_fast: " + str(l5))
-
+        print(vels[:,0])
         #print("[Epoch " + str(i + 1) + "]  Loss: " + str(l) + "  Final: " + str(ts[loss_steps - 1][0]))
         
         step = tf.train.get_global_step().eval()
